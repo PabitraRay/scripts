@@ -1,2 +1,3 @@
 /home/ubuntu/sshsrc/Avalon
 /home/ubuntu/sshsrc/Implementations
+/home/ubuntu/auth/Soumyorupkey

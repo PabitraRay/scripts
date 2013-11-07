@@ -57,6 +57,7 @@ localtime=`date +%s`
 readarray dirs < $scriptdir/dirs.txt
 avalondir=$([[ ${dirs[0]} =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
 implementationsdir=$([[ ${dirs[1]} =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
+keyfile=$([[ ${dirs[2]} =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
 
 if [[ $localtime -lt $internettime ]]; then
 	echo "Local Time: $localtime"
@@ -81,6 +82,7 @@ echo "tenant: $tenant"
 echo "avalonDir: $avalondir"
 echo "implementationDir: $implementationsdir"
 echo "environment: $environment"
+echo "keyfile: $keyfile"
 if [[ $environment == 'local' ]]; then
 	echo "Is avalon server running locally?"
 	select yn in "Yes" "No"; do
@@ -139,7 +141,7 @@ else
 	fi
 
 	server=$([[ ${servers[0]} =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
-	scp -oStrictHostKeyChecking=no -P 2222 $implementationsdir/tools/release-management/package-$tag.sh ec2-user@$server:~
+	scp -i $keyfile -oStrictHostKeyChecking=no -P 2222 $implementationsdir/tools/release-management/package-$tag.sh ec2-user@$server:~
 	if [ "$?" != "0" ]; then
 		echo "Failed to secure copy file to $server."
 		echo "The server names for $environment might have changed. Run git pull to update the server names."
@@ -148,7 +150,7 @@ else
 	else
 		echo "Secure copied file to $server."
 		echo "Deploying package on $server."
-		ssh -oStrictHostKeyChecking=no -p 2222 ec2-user@$server "./package-$tag.sh dbhost=localhost dbport=27017 host=localhost port=7002 user=bruce.lewis@$tenant.com pass=passwordone"
+		ssh -i $keyfile -oStrictHostKeyChecking=no -p 2222 ec2-user@$server "./package-$tag.sh dbhost=localhost dbport=27017 host=localhost port=7002 user=bruce.lewis@$tenant.com pass=passwordone"
 		if [ "$?" != "0" ]; then
 			echo "Deploy exited with status: $?"
 			echo "Error occurred while deploying package to $server. Aborting build and deploy."
@@ -164,10 +166,10 @@ else
 			trimmed=$([[ $i =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
 			if [[ $i == ${servers[0]} ]]; then
 				echo "Cleaning up and restarting server: $trimmed"
-				ssh -oStrictHostKeyChecking=no -p 2222 ec2-user@$trimmed "sudo /etc/init.d/node restart && rm ./package-$tag.sh" &
+				ssh -i $keyfile -oStrictHostKeyChecking=no -p 2222 ec2-user@$trimmed "sudo /etc/init.d/node restart && rm ./package-$tag.sh" &
 			else
 				echo "Restarting server: $trimmed"
-				ssh -oStrictHostKeyChecking=no -p 2222 ec2-user@$trimmed "sudo /etc/init.d/node restart" &
+				ssh -i $keyfile -oStrictHostKeyChecking=no -p 2222 ec2-user@$trimmed "sudo /etc/init.d/node restart" &
 			fi
 			pids[${#pids[@]}]=$!
 		done
