@@ -1,5 +1,7 @@
 #!/bin/bash --
 
+scriptdir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 usage()
 {
 cat << EOF
@@ -13,8 +15,6 @@ If you face errors while connecting to the AWS servers for config or config-t2 e
 OPTIONS:
    -h                          Flag. Show this message
    -t <tenant>                 Mandatory. Tenant name. Should match the folder name for the tenant in the Implementations directory.
-   -a <avalondir>              Mandatory. Avalon directory path.
-   -i <implementationsdir>     Mandatory. Implementations directory path.
    -e <environment>            Mandatory. Possible values: local, config, config-t2
 
 EOF
@@ -35,12 +35,6 @@ do
 		t)
 			tenant=$OPTARG
 			;;
-		a)
-			avalondir=$OPTARG
-			;;
-		i)
-			implementationsdir=$OPTARG
-			;;
 		e)
 			environment=$OPTARG
 			;;
@@ -60,11 +54,15 @@ done
 internettime=`curl -vs http://www.unixtimestamp.com/index.php 2>&1 | grep -o -m 1 '[0-9]\{10\}'`
 localtime=`date +%s`
 
+readarray dirs < $scriptdir/dirs.txt
+avalondir=$([[ ${dirs[0]} =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
+implementationsdir=$([[ ${dirs[1]} =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
+
 if [[ $localtime -lt $internettime ]]; then
 	echo "Local Time: $localtime"
 	echo "Internet Time: $internettime"
 	echo "Local timestamp does not match internet timestamp. Deploying to config/config-t2 with an outdated timestamp will cause your changes to be ignored."
-	echo ""
+	echo
 	echo "Please update your VM time and re-run."
 	exit 1
 fi
@@ -108,6 +106,8 @@ do
 	tag=$word
 done
 
+echo $buildop
+echo
 echo "Built package with tag: $tag"
 
 if [[ $environment == 'local' ]]; then
@@ -125,7 +125,6 @@ if [[ $environment == 'local' ]]; then
 else
 	echo "Deploying to AWS $environment environment"
 
-	scriptdir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 	declare -a servers
 	if [[ $environment == 'config' ]]; then
@@ -142,25 +141,28 @@ else
 	server=$([[ ${servers[0]} =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
 	scp -oStrictHostKeyChecking=no -P 2222 $implementationsdir/tools/release-management/package-$tag.sh ec2-user@$server:~
 	if [ "$?" != "0" ]; then
-		echo "Failed to secure copy file to ${servers[0]}."
+		echo "Failed to secure copy file to $server."
 		echo "The server names for $environment might have changed. Run git pull to update the server names."
 		echo "Aborting build and deploy."
 		exit 1
 	else
-		echo "Secure copied file to ${servers[0]}."
-		echo "Deploying package on ${servers[0]}."
+		echo "Secure copied file to $server."
+		echo "Deploying package on $server."
 		ssh -oStrictHostKeyChecking=no -p 2222 ec2-user@$server "./package-$tag.sh dbhost=localhost dbport=27017 host=localhost port=7002 user=bruce.lewis@$tenant.com pass=passwordone"
 		if [ "$?" != "0" ]; then
-			echo "Error occurred while deploying package to ${servers[0]}. Aborting build and deploy."
+			echo "Deploy exited with status: $?"
+			echo "Error occurred while deploying package to $server. Aborting build and deploy."
+			echo
+			echo "If this error occurred after 'refreshing meta', then deploy was successful and you can restart all servers."
 			exit 1
 		else
-			echo "Successfully deployed package to ${servers[0]}."
+			echo "Successfully deployed package to $server."
 		fi
 		echo "Restarting all servers in $environment environment"
 		for i in "${servers[@]}"
 		do
+			trimmed=$([[ $i =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
 			if [[ $i == ${servers[0]} ]]; then
-				trimmed=$([[ ${servers[0]} =~ [[:space:]]*([^[:space:]]|[^[:space:]].*[^[:space:]])[[:space:]]* ]]; echo -n "${BASH_REMATCH[1]}")
 				echo "Cleaning up and restarting server: $trimmed"
 				ssh -oStrictHostKeyChecking=no -p 2222 ec2-user@$trimmed "sudo /etc/init.d/node restart && rm ./package-$tag.sh" &
 			else
